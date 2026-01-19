@@ -51,7 +51,7 @@ function OBJModel({ name, dir = "buildings", targetXZ = 5, extraScale = 1 }) {
       if (!o.isMesh) return;
       o.castShadow = true;
       o.receiveShadow = true;
-      
+
       // Colormap uygula
       o.material = new THREE.MeshStandardMaterial({
         map: colormap,
@@ -89,7 +89,8 @@ export function Building({ id, position, name, size, dir = "buildings", rotation
     }
 
     const pos = ref.current.translation();
-    if (pos.y < -6) {
+    // Threshold deepened to -35 to allow tall buildings to fall completely
+    if (pos.y < -35) {
       fallen.current = true;
       ref.current.setEnabled(false);
       onEaten?.(id);
@@ -106,9 +107,9 @@ export function Building({ id, position, name, size, dir = "buildings", rotation
       position={position}
       colliders="cuboid"
       mass={mass}
-      linearDamping={0.6}
-      angularDamping={0.8}
-      friction={1}
+      linearDamping={0.1} // Reduced air resistance
+      angularDamping={0.1} // Reduced angular resistance
+      friction={0.2} // Slippery
       restitution={0}
       userData={{ id, volume }}
     >

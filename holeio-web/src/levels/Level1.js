@@ -3,7 +3,7 @@
  * Küçük ve orta binalar, kolay başlangıç
  */
 
-import { BUILDING_TYPES, ROAD_COLORS } from "../config/gameConfig";
+import { BUILDING_TYPES, OBJECT_TYPES, ROAD_COLORS } from "../config/gameConfig";
 
 // Deterministik random fonksiyonları
 const hash = (x, z, seed = 0) => {
@@ -20,7 +20,7 @@ export const LEVEL_1 = {
   id: "level-1",
   name: "Başlangıç Şehri",
   description: "Küçük bir mahalle - Öğrenmeye başla!",
-  
+
   // Tema
   theme: {
     background: "#0f172a",
@@ -60,32 +60,62 @@ export const LEVEL_1 = {
     const buildings = [];
     let idx = 0;
 
-    const { size: GRID, cellSize: CELL, safeRadius: SAFE_RADIUS } = LEVEL_1.grid;
-    const start = -((GRID - 1) * CELL) / 2;
+    const { tileCount, tileSize, safeRadius } = LEVEL_1.grid;
+    const offset = ((tileCount - 1) * tileSize) / 2;
 
-    for (let gx = 0; gx < GRID; gx++) {
-      for (let gz = 0; gz < GRID; gz++) {
-        const x = start + gx * CELL + (hash(gx, gz) - 0.5) * 2;
-        const z = start + gz * CELL + (hash(gx + 50, gz + 50) - 0.5) * 2;
+    // EXTREME DENSITY: 3x3 Grid
+    // Available space roughly -11 to +5 (16 units wide)
+    // 3x3 grid -> ~5.3 units per cell
 
-        // Güvenli alan kontrolü
-        const distFromCenter = Math.hypot(x, z);
-        if (distFromCenter < SAFE_RADIUS) continue;
+    for (let gx = 0; gx < tileCount; gx++) {
+      for (let gz = 0; gz < tileCount; gz++) {
+        const tx = gx * tileSize - offset;
+        const tz = gz * tileSize - offset;
 
-        const h = hash(gx, gz);
-        const buildingType = LEVEL_1.getBuildingType(x, z, distFromCenter, h);
-        const typeConfig = BUILDING_TYPES[buildingType];
+        // Skip center safe zone check here! Only check sub-items.
+        // if (Math.hypot(tx, tz) < safeRadius) continue;
 
-        const modelName = pick(typeConfig.models, gx, gz, 42);
-        const size = [...typeConfig.size];
+        // Moderate Density: 2x2 Grid with Skips (Avrg ~2-3 buildings)
+        const subGrid = [
+          { dx: -7, dz: -7 }, { dx: -2, dz: -7 },
+          { dx: -7, dz: -2 }, { dx: -2, dz: -2 }
+        ];
 
-        buildings.push({
-          id: `building-${idx++}`,
-          type: buildingType,
-          name: modelName,
-          pos: [x, size[1] / 2 + 0.1, z],
-          size,
-          points: typeConfig.points,
+        subGrid.forEach((sub, subIdx) => {
+          // 40% chance to skip - Keeps it from being too crowded
+          if (hash(gx * 10 + subIdx, gz * 10 + subIdx, 500) > 0.6) return;
+
+          // Skip if too close to road (safety check)
+          if (sub.dx > 6 || sub.dz > 6) return;
+
+          const actualX = tx + sub.dx;
+          const actualZ = tz + sub.dz;
+
+          // CRITICAL FIX: Check individual building distance from hole!
+          const distFromCenter = Math.hypot(actualX, actualZ);
+          if (distFromCenter < safeRadius) return;
+
+          const typeH = hash(gx, gz, subIdx * 5);
+          let buildingType = LEVEL_1.getBuildingType(tx, tz, distFromCenter, typeH);
+
+          // Force smaller buildings for 3x3 grid to prevent overlap
+          if (buildingType === "tall") buildingType = "medium";
+
+          const typeConfig = BUILDING_TYPES[buildingType];
+          const modelName = pick(typeConfig.models, gx * subIdx, gz * subIdx, 42);
+
+          // Standard size for 2x2 grid
+          const size = typeConfig.size;
+
+          buildings.push({
+            id: `building-${idx++}`,
+            type: buildingType,
+            name: modelName,
+            pos: [actualX, size[1] / 2 + 0.1, actualZ],
+            size: size,
+            points: typeConfig.points,
+            rotation: Math.floor(hash(gx, gz, subIdx * 9) * 4) * (Math.PI / 2)
+          });
         });
       }
     }
@@ -104,11 +134,138 @@ export const LEVEL_1 = {
         tiles.push({
           id: `tile-${x}-${z}`,
           pos: [x * tileSize - offset, z * tileSize - offset],
+          // Store grid indices for logic if needed
+          gridX: x,
+          gridZ: z
         });
       }
     }
 
     return tiles;
+  },
+
+  // Ekstra objeler (arabalar, insanlar vb.)
+  generateProps: () => {
+    const props = [];
+    let idx = 0;
+
+    const tiles = LEVEL_1.generateRoadTiles();
+    const { tileSize, safeRadius } = LEVEL_1.grid;
+
+    const roadLane = tileSize / 2 - 2; // Approx 10.5
+
+    tiles.forEach(tile => {
+      const { gridX, gridZ, pos } = tile;
+      const [tx, tz] = pos;
+
+      // FIX: Check safe radius for props too!
+      if (Math.hypot(tx, tz) < safeRadius) return;
+
+      // --- Horizontal Road (at +Z edge) ---
+      // X-Axis Road
+      if (hash(gridX, gridZ, 100) > 0.5) {
+        const typeConfig = OBJECT_TYPES.cars;
+        const modelName = pick(typeConfig.models, gridX, gridZ, 101);
+
+        // Randomly pick direction: East (+X) or West (-X)
+        // If Model faces -Z by default:
+        // +X: Rotate -90 (-PI/2)
+        // -X: Rotate +90 (PI/2)
+        const isEast = hash(gridX, gridZ, 102) > 0.5;
+        const driveOffset = (hash(gridX, gridZ, 103) - 0.5) * tileSize;
+
+        props.push({
+          id: `car-h-${idx++}`,
+          type: "car",
+          name: modelName,
+          pos: [tx + driveOffset, 0.5, tz + roadLane], // Lower Y slightly
+          size: typeConfig.size,
+          dir: typeConfig.dir,
+          rotation: isEast ? -Math.PI / 2 : Math.PI / 2,
+          points: typeConfig.points
+        });
+      }
+
+      // --- Vertical Road (at +X edge) ---
+      // Z-Axis Road
+      if (hash(gridX, gridZ, 200) > 0.5) {
+        const typeConfig = OBJECT_TYPES.cars;
+        const modelName = pick(typeConfig.models, gridX, gridZ, 201);
+
+        // Direction: South (+Z) or North (-Z)
+        // If Model faces -Z by default:
+        // -Z: Rotate 0
+        // +Z: Rotate PI
+        const isSouth = hash(gridX, gridZ, 202) > 0.5;
+        const driveOffset = (hash(gridX, gridZ, 203) - 0.5) * tileSize;
+
+        props.push({
+          id: `car-v-${idx++}`,
+          type: "car",
+          name: modelName,
+          pos: [tx + roadLane, 0.5, tz + driveOffset],
+          size: typeConfig.size,
+          dir: typeConfig.dir,
+          rotation: isSouth ? Math.PI : 0,
+          points: typeConfig.points
+        });
+      }
+    });
+
+    // 2. Pedestrians & Nature - Strictly SIdewalks
+    // Sidewalk is strip just inside road.
+    // Horizontal Sidewalk: Z approx 6.5 to 8.5 (Road starts at 8.5)
+    // Vertical Sidewalk: X approx 6.5 to 8.5
+    // Actually, Road width 4 -> 12.5 to 8.5.
+    // Sidewalk width 1 -> 8.5 to 7.5.
+    // Center of sidewalk strip: +/- 8.0.
+
+    tiles.forEach(tile => {
+      const { gridX, gridZ, pos } = tile;
+      const [tx, tz] = pos;
+
+      const sidewalkCenter = 8.0;
+
+      const count = Math.floor(hash(gridX, gridZ, 300) * 4) + 1;
+
+      for (let i = 0; i < count; i++) {
+        const isHuman = hash(gridX, gridZ * i, 301) > 0.3;
+        const typeConfig = isHuman ? OBJECT_TYPES.humans : OBJECT_TYPES.nature;
+        const modelName = pick(typeConfig.models, gridX * i, gridZ, 302);
+
+        // Pick side: Vertical Strip or Horizontal Strip?
+        const isVerticalStrip = hash(gridX, gridZ * i, 303) > 0.5;
+
+        let px, pz, rot;
+
+        if (isVerticalStrip) {
+          // On the vertical sidewalk (at +X side)
+          px = tx + sidewalkCenter;
+          // Along the strip randomly
+          pz = tz + (hash(gridX * i, gridZ, 304) - 0.5) * tileSize;
+          // Human faces along strip roughly
+          rot = (hash(gridX, gridZ, 305) > 0.5 ? 0 : Math.PI);
+        } else {
+          // On the horizontal sidewalk (at +Z side)
+          px = tx + (hash(gridX * i, gridZ, 304) - 0.5) * tileSize;
+          pz = tz + sidewalkCenter;
+          rot = (hash(gridX, gridZ, 305) > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+        }
+
+        props.push({
+          id: `prop-${idx++}`,
+          type: isHuman ? "human" : "nature",
+          name: modelName,
+          pos: [px, typeConfig.size[1] / 2, pz],
+          size: typeConfig.size,
+          dir: typeConfig.dir,
+          rotation: rot + (Math.random() - 0.5), // Slight jitter
+          points: typeConfig.points
+        });
+      }
+    });
+
+    return props;
   },
 };
 

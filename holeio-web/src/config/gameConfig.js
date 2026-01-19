@@ -35,7 +35,7 @@ export const GAME_CONFIG = {
   // Arena ayarları
   arena: {
     wrapSize: 80,        // Wrap-around sınırı
-    floorSize: 200,      // Zemin boyutu
+    floorSize: 500,      // Zemin boyutu
   },
 };
 
@@ -80,6 +80,38 @@ export const BUILDING_TYPES = {
     size: [5, 16, 5],
     points: 50,
   },
+};
+
+export const OBJECT_TYPES = {
+  cars: {
+    models: [
+      "hatchback-sports", "police", "taxi", "sedan", "suv", "van", "truck-flat", "ambulance", "firetruck"
+    ],
+    size: [2.5, 2, 4.5],
+    points: 15,
+    dir: "cars"
+  },
+  humans: {
+    models: [
+      "character-male-a", "character-male-b", "character-male-c",
+      "character-female-a", "character-female-b", "character-female-c"
+    ],
+    size: [0.8, 1.8, 0.8],
+    points: 5,
+    dir: "characters"
+  },
+  nature: {
+    models: ["tree-large", "tree-small", "planter"],
+    size: [2, 4, 2],
+    points: 8,
+    dir: "objects"
+  },
+  props: {
+    models: ["cone", "cone-flat", "fence", "fence-low"],
+    size: [1, 1, 1],
+    points: 2,
+    dir: "objects"
+  }
 };
 
 // Yol texture renkleri
