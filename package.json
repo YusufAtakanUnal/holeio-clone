@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@react-three/cannon": "^6.6.0",
+    "cannon-es": "^0.20.0"
+  }
+}
